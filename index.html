@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>胡老師的資訊（Python版）14章線上自動評分題庫</title>
+  <!-- 內嵌與引入穩定版本的 SheetJS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --primary: #1e40af;
+      --primary-light: #eff6ff;
+      --primary-hover: #1d4ed8;
+      --accent: #0f766e;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --correct-bg: #ecfdf5;
+      --correct-border: #10b981;
+      --correct-text: #065f46;
+      --wrong-bg: #fef2f2;
+      --wrong-border: #ef4444;
+      --wrong-text: #991b1b;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);
+      color: #fff;
+      padding: 1.5rem 1rem;
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    header h1 {
+      margin: 0 0 0.4rem;
+      font-size: 1.55rem;
+      letter-spacing: 0.5px;
+    }
+    header p {
+      margin: 0;
+      font-size: 0.92rem;
+      opacity: 0.9;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 1.5rem auto 3rem;
+      padding: 0 1rem;
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    }
+
+    .upload-box {
+      border: 2px dashed #93c5fd;
+      background: var(--primary-light);
+      border-radius: 10px;
+      padding: 1.25rem;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+    .upload-box.loaded {
+      border-color: #10b981;
+      background: #f0fdf4;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0.65rem 1.25rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-success { background: #059669; color: #fff; }
+    .btn-success:hover:not(:disabled) { background: #047857; }
+    .btn-outline { background: #fff; color: var(--primary); border: 1px solid var(--primary); }
+    .btn-outline:hover:not(:disabled) { background: var(--primary-light); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .chapter-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    .chapter-card {
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      cursor: pointer;
+      background: #fff;
+      text-align: left;
+      transition: all 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .chapter-card:hover {
+      border-color: #60a5fa;
+      transform: translateY(-1px);
+    }
+    .chapter-card.active {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      box-shadow: 0 0 0 2px rgba(30, 64, 175, 0.15);
+    }
+    .chapter-badge { font-size: 0.8rem; font-weight: 700; color: var(--primary); margin-bottom: 0.25rem; }
+    .chapter-title { font-size: 0.98rem; font-weight: 600; color: var(--text); margin-bottom: 0.35rem; }
+    .chapter-meta { font-size: 0.8rem; color: var(--muted); }
+
+    .action-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-top: 1.25rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .quiz-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      padding-bottom: 1rem;
+      margin-bottom: 1.25rem;
+      border-bottom: 2px solid var(--border);
+    }
+    .section-divider {
+      background: #f1f5f9;
+      border-left: 4px solid var(--primary);
+      padding: 0.65rem 1rem;
+      font-weight: 700;
+      font-size: 1.05rem;
+      margin: 1.5rem 0 1rem;
+      border-radius: 0 8px 8px 0;
+    }
+    .section-divider.multi { border-left-color: var(--accent); }
+
+    .question-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.15rem;
+      margin-bottom: 1rem;
+      background: #fff;
+    }
+    .question-card.graded-correct { border-color: var(--correct-border); background: var(--correct-bg); }
+    .question-card.graded-wrong { border-color: var(--wrong-border); background: var(--wrong-bg); }
+
+    .q-title {
+      font-weight: 600;
+      font-size: 1rem;
+      margin-bottom: 0.85rem;
+      display: flex;
+      gap: 0.5rem;
+      align-items: flex-start;
+    }
+    .q-num {
+      background: var(--primary);
+      color: #fff;
+      font-size: 0.82rem;
+      padding: 0.15rem 0.55rem;
+      border-radius: 6px;
+      white-space: nowrap;
+      margin-top: 0.1rem;
+    }
+    .q-num.multi { background: var(--accent); }
+    .q-text { white-space: pre-wrap; word-break: break-word; }
+
+    .options-list { display: flex; flex-direction: column; gap: 0.5rem; }
+    .option-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      padding: 0.6rem 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .option-label:hover { background: #f8fafc; }
+    .option-label input { margin-top: 0.28rem; transform: scale(1.15); cursor: pointer; }
+
+    .explanation-box {
+      margin-top: 0.85rem;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      font-size: 0.92rem;
+      display: none;
+    }
+    .explanation-box.show { display: block; }
+
+    .score-banner {
+      display: none;
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+      color: #fff;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    .score-banner.show { display: block; }
+    .score-big { font-size: 2.75rem; font-weight: 800; color: #fbbf24; line-height: 1.1; margin: 0.4rem 0; }
+    .score-details {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      margin-top: 0.75rem;
+      font-size: 0.95rem;
+    }
+    .hidden { display: none !important; }
+    .tag-filter { display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>胡老師的資訊（Python版）線上自動評分題庫</h1>
+  <p>全14章完整題庫（1,500題）｜每次隨機抽選 10 題單選 ＋ 10 題多選（滿分 100 分）</p>
+</header>
+
+<div class="container">
+  <!-- 步驟一：自動載入狀態區 -->
+  <div class="panel">
+    <div id="uploadBox" class="upload-box">
+      <div id="uploadStatus">
+        <strong>正在自動載入題庫 Excel 檔...</strong><br />
+        <span style="font-size: 0.9rem; color: var(--muted);">請稍候，系統正在讀取雲端題庫資料。</span>
+      </div>
+    </div>
+
+    <!-- 步驟二：選擇章節 -->
+    <div id="chapterSection" class="hidden" style="margin-top: 1.5rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <strong>步驟 2：選擇測驗章節（第 1 章 ～ 第 14 章）</strong>
+        <span id="selectedChapterLabel" style="font-size: 0.9rem; color: var(--primary); font-weight: 600;">尚未選擇章節</span>
+      </div>
+      <div id="chapterGrid" class="chapter-grid"></div>
+
+      <div class="action-bar">
+        <div style="font-size: 0.9rem; color: var(--muted);">
+          測驗規則：隨機抽取 <strong>10 題單選</strong>（每題 5 分）＋ <strong>10 題多選</strong>（每題 5 分）。
+        </div>
+        <button id="generateBtn" class="btn btn-primary" disabled>🎲 生成本回測驗（20題）</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 成績結果橫幅 -->
+  <div id="scoreBanner" class="score-banner">
+    <div id="scoreChapterTitle" style="font-size: 1rem; opacity: 0.9;"></div>
+    <div class="score-big"><span id="totalScore">0</span> <span style="font-size: 1.2rem; color: #fff;">/ 100 分</span></div>
+    <div class="score-details">
+      <span>單選答對：<strong id="singleCorrectCount">0</strong> / 10 題（<span id="singleScore">0</span> 分）</span>
+      <span>多選答對：<strong id="multiCorrectCount">0</strong> / 10 題（<span id="multiScore">0</span> 分）</span>
+    </div>
+    <div class="tag-filter">
+      <button class="btn btn-outline" style="padding: 0.4rem 0.9rem; font-size: 0.85rem;" onclick="filterQuestions('all')">顯示全部 20 題</button>
+      <button class="btn btn-outline" style="padding: 0.4rem 0.9rem; font-size: 0.85rem;" onclick="filterQuestions('wrong')">只看答錯題目</button>
+      <button class="btn btn-success" style="padding: 0.4rem 0.9rem; font-size: 0.85rem;" onclick="generateQuiz()">🔄 同章節重新抽題</button>
+    </div>
+  </div>
+
+  <!-- 步驟三：線上作答與解析區 -->
+  <div id="quizPanel" class="panel hidden">
+    <div class="quiz-header">
+      <div>
+        <h2 id="quizTitle" style="margin: 0; font-size: 1.25rem;"></h2>
+        <span id="quizSub" style="font-size: 0.88rem; color: var(--muted);">請完成以下 20 題作答後，點擊下方「交卷並自動評分」</span>
+      </div>
+      <div id="progressText" style="font-weight: 600; color: var(--primary); font-size: 0.95rem;">已作答：0 / 20 題</div>
+    </div>
+
+    <div class="section-divider">第一部分：單選題（共 10 題，每題 5 分，共 50 分）</div>
+    <div id="singleContainer"></div>
+
+    <div class="section-divider multi">第二部分：多選題（共 10 題，每題 5 分，共 50 分，選項全對才給分）</div>
+    <div id="multiContainer"></div>
+
+    <div class="action-bar" style="justify-content: center; gap: 1rem;">
+      <button id="submitBtn" class="btn btn-success" style="padding: 0.8rem 2rem; font-size: 1.05rem;">✅ 交卷並自動評分</button>
+      <button id="resetBtn" class="btn btn-outline" onclick="generateQuiz()">🔄 重新抽取 20 題</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const CHAPTER_TOPICS = {
+    1: "重要資料結構的概念與應用", 2: "重要演算法的概念與應用", 3: "程式設計概念與實作",
+    4: "串列資料結構的程式設計實作", 5: "重要演算法的程式設計實作", 6: "系統平台之運作原理",
+    7: "網際網路運作原理", 8: "系統平台之未來發展趨勢", 9: "巨量資料的概念與應用",
+    10: "資料探勘與機器學習的基本概念", 11: "專案管理與數位協同共創", 12: "資訊科技合理使用原則",
+    13: "個人資料的保護", 14: "資訊科技對人類社會的影響與衝擊"
+  };
+
+  let questionBank = {};
+  let selectedChapter = null;
+  let currentQuiz = { single: [], multi: [] };
+  let isGraded = false;
+
+  // 網頁載入完成後，自動讀取同資料夾下的 Excel 題庫檔案
+  window.addEventListener("DOMContentLoaded", function () {
+    const fileName = "普高資訊科技題庫1500題_Python版.xlsx";
+
+    fetch(fileName)
+      .then(response => {
+        if (!response.ok) throw new Error("找不到 Excel 題庫檔案，請確認檔名是否與程式碼中的一致！");
+        return response.arrayBuffer();
+      })
+      .then(arrayBuffer => {
+        if (typeof XLSX === 'undefined') {
+          throw new Error("SheetJS 套件載入失敗，請檢查網路連線。");
+        }
+        const data = new Uint8Array(arrayBuffer);
+        const workbook = XLSX.read(data, { type: "array" });
+        parseWorkbook(workbook, fileName);
+      })
+      .catch(err => {
+        document.getElementById("uploadStatus").innerHTML = `
+          <strong style="color: #991b1b;">❌ 自動載入題庫失敗</strong><br />
+          <span style="font-size: 0.9rem; color: #7f1d1d;">${err.message}</span>
+        `;
+      });
+  });
+
+  function parseWorkbook(workbook, fileName) {
+    questionBank = {};
+    let totalSingle = 0, totalMulti = 0;
+
+    for (let ch = 1; ch <= 14; ch++) {
+      const sheetName = `第${ch}章`;
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      let topic = CHAPTER_TOPICS[ch] || "";
+      if (rows[0] && rows[0][0] && String(rows[0][0]).includes("｜")) {
+        topic = String(rows[0][0]).split("｜")[1].trim();
+      }
+
+      const singleList = [], multiList = [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const qType = String(r[1] || "").trim();
+        if (qType === "單選" || qType === "多選") {
+          const item = {
+            id: String(r[0] || "").trim(),
+            type: qType,
+            q: String(r[2] || "").trim(),
+            options: { A: String(r[3] || "").trim(), B: String(r[4] || "").trim(), C: String(r[5] || "").trim(), D: String(r[6] || "").trim() },
+            ans: String(r[7] || "").trim().toUpperCase().replace(/[^ABCD]/g, ""),
+            exp: String(r[9] || "").trim()
+          };
+          if (qType === "單選") { singleList.push(item); totalSingle++; }
+          else { multiList.push(item); totalMulti++; }
+        }
+      }
+
+      questionBank[ch] = { ch, title: `第 ${ch} 章`, topic, single: singleList, multi: multiList };
+    }
+
+    const loadedChapters = Object.keys(questionBank).length;
+    if (loadedChapters === 0) {
+      alert("未在 Excel 中找到第 1 章至第 14 章工作表。");
+      return;
+    }
+
+    document.getElementById("uploadBox").classList.add("loaded");
+    document.getElementById("uploadStatus").innerHTML = `
+      <strong style="color: #065f46;">✅ 雲端題庫自動載入成功：${escapeHtml(fileName)}</strong><br />
+      <span style="font-size: 0.9rem; color: #047857;">已就緒 ${loadedChapters} 個章節，共 ${totalSingle} 題單選 ＋ ${totalMulti} 題多選</span>
+    `;
+
+    renderChapterGrid();
+    document.getElementById("chapterSection").classList.remove("hidden");
+  }
+
+  function renderChapterGrid() {
+    const grid = document.getElementById("chapterGrid");
+    grid.innerHTML = "";
+    for (let ch = 1; ch <= 14; ch++) {
+      const data = questionBank[ch];
+      if (!data) continue;
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "chapter-card";
+      card.dataset.ch = ch;
+      card.innerHTML = `
+        <div>
+          <div class="chapter-badge">第 ${ch} 章</div>
+          <div class="chapter-title">${escapeHtml(data.topic)}</div>
+        </div>
+        <div class="chapter-meta">單選 ${data.single.length} 題 ／ 多選 ${data.multi.length} 題</div>
+      `;
+      card.onclick = () => selectChapter(ch);
+      grid.appendChild(card);
+    }
+  }
+
+  function selectChapter(ch) {
+    selectedChapter = ch;
+    document.querySelectorAll(".chapter-card").forEach(el => el.classList.toggle("active", Number(el.dataset.ch) === ch));
+    document.getElementById("selectedChapterLabel").textContent = `已選擇：第 ${ch} 章｜${questionBank[ch].topic}`;
+    document.getElementById("generateBtn").disabled = false;
+  }
+
+  function pickRandom(arr, count) {
+    const copy = [...arr];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy.slice(0, Math.min(count, copy.length));
+  }
+
+  document.getElementById("generateBtn").addEventListener("click", generateQuiz);
+
+  function generateQuiz() {
+    if (!selectedChapter || !questionBank[selectedChapter]) return;
+    const chData = questionBank[selectedChapter];
+    currentQuiz = {
+      single: pickRandom(chData.single, 10),
+      multi: pickRandom(chData.multi, 10)
+    };
+    isGraded = false;
+
+    document.getElementById("scoreBanner").classList.remove("show");
+    document.getElementById("quizPanel").classList.remove("hidden");
+    document.getElementById("submitBtn").disabled = false;
+    document.getElementById("quizTitle").textContent = `第 ${chData.ch} 章：${chData.topic} — 線上測驗卷`;
+    document.getElementById("quizSub").textContent = "請完成以下 20 題作答後，點擊下方「交卷並自動評分」";
+
+    renderQuestions("singleContainer", currentQuiz.single, "radio", 1);
+    renderQuestions("multiContainer", currentQuiz.multi, "checkbox", 11);
+    updateProgress();
+    document.getElementById("quizPanel").scrollIntoView({ behavior: "smooth" });
+  }
+
+  function renderQuestions(containerId, list, inputType, startIndex) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = "";
+    list.forEach((item, idx) => {
+      const qNo = startIndex + idx;
+      const isMulti = inputType === "checkbox";
+      const card = document.createElement("div");
+      card.className = "question-card";
+      card.id = `q-card-${qNo}`;
+
+      let optionsHtml = "";
+      ["A", "B", "C", "D"].forEach(optKey => {
+        optionsHtml += `
+          <label class="option-label">
+            <input type="${inputType}" name="q_${qNo}" value="${optKey}" onchange="updateProgress()" />
+            <span><strong>(${optKey})</strong> ${escapeHtml(item.options[optKey])}</span>
+          </label>
+        `;
+      });
+
+      card.innerHTML = `
+        <div class="q-title">
+          <span class="q-num ${isMulti ? "multi" : ""}">第 ${qNo} 題（${item.type}｜${escapeHtml(item.id)}）</span>
+          <div class="q-text">${escapeHtml(item.q)}</div>
+        </div>
+        <div class="options-list">${optionsHtml}</div>
+        <div class="explanation-box" id="exp-${qNo}"></div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  function updateProgress() {
+    if (isGraded) return;
+    let answered = 0;
+    for (let i = 1; i <= 20; i++) {
+      if (document.querySelectorAll(`input[name="q_${i}"]:checked`).length > 0) answered++;
+    }
+    document.getElementById("progressText").textContent = `已作答：${answered} / 20 題`;
+  }
+
+  document.getElementById("submitBtn").addEventListener("click", function () {
+    const unanswered = [];
+    for (let i = 1; i <= 20; i++) {
+      if (document.querySelectorAll(`input[name="q_${i}"]:checked`).length === 0) unanswered.push(i);
+    }
+    if (unanswered.length > 0) {
+      if (!confirm(`您還有第 ${unanswered.join("、")} 題尚未作答，確定要交卷嗎？`)) return;
+    }
+
+    isGraded = true;
+    this.disabled = true;
+
+    let singleCorrect = 0, multiCorrect = 0;
+    currentQuiz.single.forEach((item, idx) => { if (gradeSingleQuestion(idx + 1, item)) singleCorrect++; });
+    currentQuiz.multi.forEach((item, idx) => { if (gradeSingleQuestion(idx + 11, item)) multiCorrect++; });
+
+    const totalScore = (singleCorrect * 5) + (multiCorrect * 5);
+    const chData = questionBank[selectedChapter];
+
+    document.getElementById("scoreChapterTitle").textContent = `測驗章節：第 ${chData.ch} 章｜${chData.topic}`;
+    document.getElementById("totalScore").textContent = totalScore;
+    document.getElementById("singleCorrectCount").textContent = singleCorrect;
+    document.getElementById("singleScore").textContent = singleCorrect * 5;
+    document.getElementById("multiCorrectCount").textContent = multiCorrect;
+    document.getElementById("multiScore").textContent = multiCorrect * 5;
+    document.getElementById("progressText").textContent = `已批改完成（總分 ${totalScore} 分）`;
+
+    const banner = document.getElementById("scoreBanner");
+    banner.classList.add("show");
+    banner.scrollIntoView({ behavior: "smooth" });
+  });
+
+  function gradeSingleQuestion(qNo, item) {
+    const inputs = document.querySelectorAll(`input[name="q_${qNo}"]`);
+    const selectedVals = [];
+    inputs.forEach(inp => {
+      inp.disabled = true;
+      if (inp.checked) selectedVals.push(inp.value);
+    });
+
+    const userAns = selectedVals.sort().join("");
+    const correctAns = item.ans.split("").sort().join("");
+    const isCorrect = userAns === correctAns;
+
+    const card = document.getElementById(`q-card-${qNo}`);
+    card.classList.add(isCorrect ? "graded-correct" : "graded-wrong");
+    card.dataset.result = isCorrect ? "correct" : "wrong";
+
+    const expBox = document.getElementById(`exp-${qNo}`);
+    expBox.classList.add("show");
+    expBox.innerHTML = `
+      <div style="margin-bottom: 0.35rem;">
+        <strong style="color: ${isCorrect ? "var(--correct-text)" : "var(--wrong-text)"};">
+          ${isCorrect ? "✔ 答對（+5 分）" : "✘ 答錯（+0 分）"}
+        </strong>
+        ｜您的作答：<strong>${userAns || "未作答"}</strong>
+        ｜正確答案：<strong style="color: #065f46;">${correctAns}</strong>
+      </div>
+      <div style="color: #334155;"><strong>【詳解】</strong>${escapeHtml(item.exp || "無解析說明")}</div>
+    `;
+    return isCorrect;
+  }
+
+  function filterQuestions(mode) {
+    document.querySelectorAll(".question-card").forEach(card => {
+      if (mode === "wrong") {
+        card.classList.toggle("hidden", card.dataset.result === "correct");
+      } else {
+        card.classList.remove("hidden");
+      }
+    });
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
+</script>
+
+</body>
+</html>
